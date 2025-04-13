@@ -17,6 +17,7 @@ pids
 
 # Google Cloud credentials
 *-credentials.json
+.vercel/credentials.json
 
 # Uploaded images
 uploads/

@@ -5,18 +5,28 @@
 
 const { ImageAnnotatorClient } = require('@google-cloud/vision');
 const fs = require('fs');
+const path = require('path');
 
 // Initialize Vision client
 let visionClient;
 
 try {
-  // If using GOOGLE_CREDENTIALS environment variable (for Vercel)
-  if (process.env.GOOGLE_CREDENTIALS) {
+  // Try multiple ways to get credentials
+  if (fs.existsSync(path.join(process.cwd(), '.vercel/credentials.json'))) {
+    // Load credentials from file system
+    console.log('Using Google credentials from .vercel/credentials.json');
+    visionClient = new ImageAnnotatorClient({
+      keyFilename: path.join(process.cwd(), '.vercel/credentials.json')
+    });
+  } else if (process.env.GOOGLE_CREDENTIALS) {
+    // If using GOOGLE_CREDENTIALS environment variable (fallback)
+    console.log('Using Google credentials from environment variable');
     visionClient = new ImageAnnotatorClient({
       credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS)
     });
   } else {
-    // Default initialization (for local development)
+    // Default initialization (for local development with ADC)
+    console.log('Using Application Default Credentials');
     visionClient = new ImageAnnotatorClient();
   }
 } catch (error) {
