@@ -1,0 +1,213 @@
+/* 
+ * ImageToMusic CSS Styles 
+ */
+
+:root {
+  --primary-color: #2563eb;
+  --secondary-color: #16a34a;
+  --dark-color: #1e293b;
+  --light-color: #f8fafc;
+  --transition-speed: 0.3s;
+}
+
+body {
+  background-color: #f8f9fa;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+footer {
+  margin-top: auto;
+}
+
+/* Upload Zone Styling */
+.upload-zone {
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-speed);
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-zone:hover {
+  border-color: var(--primary-color);
+  background-color: rgba(37, 99, 235, 0.05);
+}
+
+.upload-zone.drag-over {
+  border-color: var(--primary-color);
+  background-color: rgba(37, 99, 235, 0.1);
+}
+
+.upload-prompt {
+  color: #6c757d;
+}
+
+.preview-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#image-preview {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 4px;
+}
+
+/* Keywords and Tags */
+.keyword-tag {
+  background-color: #e9ecef;
+  color: #495057;
+  border-radius: 16px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  transition: all var(--transition-speed);
+}
+
+.keyword-tag:hover {
+  background-color: #dee2e6;
+}
+
+.keyword-tag i {
+  margin-right: 0.5rem;
+}
+
+/* Color Palette */
+.color-swatch {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  margin: 0 0.25rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: transform var(--transition-speed);
+  cursor: pointer;
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.color-label {
+  font-size: 0.75rem;
+  text-align: center;
+  margin-top: 0.5rem;
+  color: #6c757d;
+}
+
+/* Song Recommendation Cards */
+.song-card {
+  transition: transform var(--transition-speed), box-shadow var(--transition-speed);
+  height: 100%;
+}
+
+.song-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+}
+
+.song-title {
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+}
+
+.song-artist {
+  color: #6c757d;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.song-mood {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-bottom: 0.75rem;
+}
+
+.song-reason {
+  font-size: 0.85rem;
+  color: #495057;
+  margin-bottom: 1rem;
+}
+
+.song-actions {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Spotify Track Search Results */
+.spotify-track {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  border: 1px solid #dee2e6;
+  transition: background-color var(--transition-speed);
+}
+
+.spotify-track:hover {
+  background-color: #f8f9fa;
+}
+
+.spotify-track-image {
+  width: 50px;
+  height: 50px;
+  margin-right: 1rem;
+  border-radius: 4px;
+}
+
+.spotify-track-info {
+  flex-grow: 1;
+}
+
+.spotify-track-title {
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+}
+
+.spotify-track-artist {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+/* Loading Skeletons */
+.skeleton {
+  animation: skeleton-loading 1s linear infinite alternate;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-color: #e9ecef;
+  }
+  100% {
+    background-color: #f8f9fa;
+  }
+}
+
+/* Toasts */
+.toast {
+  max-width: 350px;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .color-swatch {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* Dynamic Theme */
+.theme-transition {
+  transition: background-color 0.5s ease, color 0.5s ease;
+} 

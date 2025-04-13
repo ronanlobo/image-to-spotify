@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImageToMusic - Discover Music from Images</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-music me-2"></i>
+                ImageToMusic
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#"><i class="fas fa-home me-1"></i> Home</a>
+                    </li>
+                    <li class="nav-item" id="spotify-login-container">
+                        <!-- Spotify login/logout buttons will be injected here via JS -->
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container my-5">
+        <div class="row">
+            <div class="col-lg-8 mx-auto text-center mb-5">
+                <h1 class="display-4 fw-bold">Turn Images Into Music</h1>
+                <p class="lead">Upload an image and discover songs that match its mood and feel.</p>
+            </div>
+        </div>
+
+        <!-- Image Upload Section -->
+        <div class="row mb-5">
+            <div class="col-lg-6 mx-auto">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h4 class="card-title mb-4"><i class="fas fa-cloud-upload-alt me-2"></i>Upload Your Image</h4>
+                        
+                        <!-- Upload Zone -->
+                        <div id="upload-zone" class="upload-zone mb-3">
+                            <input type="file" id="image-input" accept="image/*" class="d-none">
+                            <div class="upload-prompt">
+                                <i class="fas fa-image fa-3x mb-3"></i>
+                                <p>Drag & drop an image here or click to browse</p>
+                            </div>
+                            <div id="preview-container" class="preview-container d-none">
+                                <img id="image-preview" src="#" alt="Preview">
+                                <button id="remove-image" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-2">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button id="analyze-btn" class="btn btn-primary" disabled>
+                                <i class="fas fa-magic me-2"></i>Analyze Image
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis and Results Section (Hidden until image is processed) -->
+        <div id="results-section" class="row mb-5 d-none">
+            <div class="col-12">
+                <!-- Keywords Section -->
+                <div class="card shadow mb-4">
+                    <div class="card-body">
+                        <h4 class="card-title"><i class="fas fa-tags me-2"></i>Image Keywords</h4>
+                        <div id="keywords-container" class="d-flex flex-wrap gap-2 mt-3"></div>
+                        
+                        <!-- Loading spinner for keywords -->
+                        <div id="keywords-loading" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Analyzing image...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Color Palette Card -->
+                <div class="card shadow mb-4">
+                    <div class="card-body">
+                        <h4 class="card-title"><i class="fas fa-palette me-2"></i>Color Palette</h4>
+                        <div id="colors-container" class="d-flex justify-content-center mt-3"></div>
+                    </div>
+                </div>
+                
+                <!-- Song Recommendations Section -->
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h4 class="card-title mb-4"><i class="fas fa-headphones-alt me-2"></i>Recommended Songs</h4>
+                        
+                        <!-- Loading spinner for recommendations -->
+                        <div id="recommendations-loading" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Generating song recommendations...</p>
+                        </div>
+                        
+                        <!-- Recommendations grid -->
+                        <div id="recommendations-container" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4"></div>
+                        
+                        <!-- Spotify login prompt (shown when recommendations are ready but user is not logged in) -->
+                        <div id="spotify-prompt" class="alert alert-info text-center mt-4 d-none">
+                            <i class="fab fa-spotify me-2"></i>
+                            <span>Connect to Spotify to add these songs to your playlists or liked songs.</span>
+                            <a id="spotify-connect-btn" href="/api/spotify/login" class="btn btn-success btn-sm ms-2">Connect</a>
+                        </div>
+                        
+                        <!-- Spotify playlist actions (shown when user is logged in) -->
+                        <div id="spotify-actions" class="mt-4 d-none">
+                            <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                <button id="create-playlist-btn" class="btn btn-success">
+                                    <i class="fas fa-plus-circle me-2"></i>Create New Playlist
+                                </button>
+                                <button id="show-playlists-btn" class="btn btn-outline-success">
+                                    <i class="fas fa-list me-2"></i>Add to Existing Playlist
+                                </button>
+                            </div>
+                            
+                            <!-- Playlist creation form (initially hidden) -->
+                            <div id="playlist-form" class="card mt-3 d-none">
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label for="playlist-name" class="form-label">Playlist Name</label>
+                                        <input type="text" class="form-control" id="playlist-name" placeholder="My Awesome Playlist">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="playlist-description" class="form-label">Description (optional)</label>
+                                        <textarea class="form-control" id="playlist-description" rows="2" placeholder="Generated from my image"></textarea>
+                                    </div>
+                                    <div class="d-grid">
+                                        <button id="create-playlist-submit" class="btn btn-primary">Create and Add Songs</button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Existing playlists dropdown (initially hidden) -->
+                            <div id="playlists-dropdown" class="card mt-3 d-none">
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label for="playlist-select" class="form-label">Select Playlist</label>
+                                        <select class="form-select" id="playlist-select">
+                                            <option selected disabled>Loading playlists...</option>
+                                        </select>
+                                    </div>
+                                    <div class="d-grid">
+                                        <button id="add-to-playlist-submit" class="btn btn-primary">Add Songs to Playlist</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast container for notifications -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+    <!-- Modal for Spotify track search/confirmation -->
+    <div class="modal fade" id="spotify-track-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Find on Spotify</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="spotify-search-results"></div>
+                    <div id="spotify-search-loading" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Searching Spotify...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container text-center">
+            <p>ImageToMusic - Convert your images into song recommendations</p>
+            <p class="small">
+                Powered by Google Cloud Vision, OpenAI, and Spotify
+            </p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- App Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html> 
