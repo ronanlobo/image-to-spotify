@@ -9,8 +9,6 @@ const cors = require('cors');
 const path = require('path');
 const session = require('express-session');
 const passport = require('passport');
-const multer = require('multer');
-const fs = require('fs');
 
 // Import routes
 const analysisRoutes = require('./routes/analysis');
@@ -19,42 +17,6 @@ const spotifyRoutes = require('./routes/spotify');
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
-});
-
-// File filter to accept only images
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed!'), false);
-  }
-};
-
-// Initialize multer middleware
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  }
-});
 
 // Middleware
 app.use(cors());
@@ -66,7 +28,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production' }
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
 }));
 
 // Initialize Passport
@@ -79,6 +44,15 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 // API Routes
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/spotify', spotifyRoutes);
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Serve the main index.html file for client-side routing
 app.get('*', (req, res) => {
@@ -96,8 +70,13 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`http://localhost:${PORT}`);
-}); 
+// Start server (only when running directly, not when imported by Vercel)
+if (process.env.NODE_ENV !== 'production' || require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`http://localhost:${PORT}`);
+  });
+}
+
+// Export for Vercel serverless function
+module.exports = app; 

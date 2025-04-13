@@ -47,6 +47,9 @@ document.addEventListener('DOMContentLoaded', () => {
    * Initialize the application
    */
   async function init() {
+    // Check API health
+    await checkApiHealth();
+    
     // Check Spotify login status
     await checkSpotifyLogin();
     
@@ -693,5 +696,25 @@ document.addEventListener('DOMContentLoaded', () => {
     toastEl.addEventListener('hidden.bs.toast', () => {
       toastEl.remove();
     });
+  }
+
+  /**
+   * Check API health on startup
+   */
+  async function checkApiHealth() {
+    try {
+      const health = await ApiService.checkHealth();
+      console.log('API Health:', health);
+      
+      // If we get a response, test Vision API
+      if (health.status === 'OK') {
+        const visionTest = await ApiService.testVision();
+        console.log('Vision API Test:', visionTest);
+      }
+    } catch (error) {
+      console.error('API Health check failed:', error);
+      // Show a toast notification about API issues
+      showToast('API connection issues. Some features may not work correctly.', 'warning');
+    }
   }
 }); 

@@ -19,6 +19,14 @@ class ApiService {
         body: formData
       });
       
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error(`Expected JSON response but got: ${text.substring(0, 100)}...`);
+      }
+      
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to upload image');
@@ -45,6 +53,14 @@ class ApiService {
         },
         body: JSON.stringify({ filename })
       });
+      
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error(`Expected JSON response but got: ${text.substring(0, 100)}...`);
+      }
       
       if (!response.ok) {
         const error = await response.json();
@@ -78,6 +94,14 @@ class ApiService {
           emotions: dominantEmotion ? [dominantEmotion] : [] 
         })
       });
+      
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response:', text);
+        throw new Error(`Expected JSON response but got: ${text.substring(0, 100)}...`);
+      }
       
       if (!response.ok) {
         const error = await response.json();
@@ -244,6 +268,34 @@ class ApiService {
     } catch (error) {
       console.error('Spotify add to playlist error:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Check API health
+   * @returns {Promise<Object>} Health status
+   */
+  static async checkHealth() {
+    try {
+      const response = await fetch('/api/health');
+      return await response.json();
+    } catch (error) {
+      console.error('Health check error:', error);
+      return { status: 'Error', error: error.message };
+    }
+  }
+  
+  /**
+   * Test Vision API setup
+   * @returns {Promise<Object>} Test results
+   */
+  static async testVision() {
+    try {
+      const response = await fetch('/api/analysis/test-vision');
+      return await response.json();
+    } catch (error) {
+      console.error('Vision test error:', error);
+      return { status: 'Error', error: error.message };
     }
   }
 } 

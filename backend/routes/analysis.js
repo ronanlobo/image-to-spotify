@@ -6,27 +6,15 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const visionService = require('../lib/vision');
 const openaiService = require('../lib/openai');
 
-// Configure multer for file uploads
-const uploadsDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// In-memory storage for uploaded images and analysis results
+const imageCache = new Map();
+const analysisCache = new Map();
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
-});
+// Configure multer for in-memory storage (compatible with serverless)
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) {
@@ -44,9 +32,6 @@ const upload = multer({
   }
 });
 
-// Cache to store previous analysis results
-const analysisCache = new Map();
-
 /**
  * POST /api/analysis/upload
  * Uploads an image and returns its unique identifier
@@ -57,10 +42,16 @@ router.post('/upload', upload.single('image'), (req, res) => {
       return res.status(400).json({ error: 'No image file uploaded' });
     }
 
+    // Generate a unique ID for the file
+    const fileId = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    
+    // Store the image buffer in memory cache
+    imageCache.set(fileId, req.file.buffer);
+    
     res.status(200).json({
       message: 'Image uploaded successfully',
-      filename: req.file.filename,
-      path: `/uploads/${req.file.filename}`
+      filename: fileId,
+      path: `/api/image/${fileId}`
     });
   } catch (error) {
     console.error('Upload error:', error);
@@ -79,22 +70,21 @@ router.post('/analyze', async (req, res) => {
     if (!filename) {
       return res.status(400).json({ error: 'No filename provided' });
     }
-
-    const imagePath = path.join(uploadsDir, filename);
     
-    // Check if file exists
-    if (!fs.existsSync(imagePath)) {
-      return res.status(404).json({ error: 'Image file not found' });
-    }
-
     // Check if we have cached results
     if (analysisCache.has(filename)) {
       console.log('Returning cached analysis for', filename);
       return res.status(200).json(analysisCache.get(filename));
     }
 
+    // Get image buffer from cache
+    const imageBuffer = imageCache.get(filename);
+    if (!imageBuffer) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
     // Analyze image using Google Cloud Vision
-    const analysisResults = await visionService.analyzeImage(imagePath);
+    const analysisResults = await visionService.analyzeImageBuffer(imageBuffer);
     
     // Cache the results
     analysisCache.set(filename, analysisResults);
@@ -102,7 +92,11 @@ router.post('/analyze', async (req, res) => {
     res.status(200).json(analysisResults);
   } catch (error) {
     console.error('Analysis error:', error);
-    res.status(500).json({ error: 'Error analyzing image', details: error.message });
+    res.status(500).json({ 
+      error: 'Error analyzing image', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -128,7 +122,65 @@ router.post('/recommend', async (req, res) => {
     res.status(200).json(recommendations);
   } catch (error) {
     console.error('Recommendation error:', error);
-    res.status(500).json({ error: 'Error generating recommendations', details: error.message });
+    res.status(500).json({ 
+      error: 'Error generating recommendations', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
+ * GET /api/image/:id
+ * Serves an image from memory cache (for preview purposes)
+ */
+router.get('/image/:id', (req, res) => {
+  const imageId = req.params.id;
+  const imageBuffer = imageCache.get(imageId);
+  
+  if (!imageBuffer) {
+    return res.status(404).json({ error: 'Image not found' });
+  }
+  
+  res.set('Content-Type', 'image/jpeg');
+  res.send(imageBuffer);
+});
+
+// Debug endpoint to check API status
+router.get('/status', (req, res) => {
+  res.json({
+    status: 'OK',
+    environment: process.env.NODE_ENV,
+    cacheSize: {
+      images: imageCache.size,
+      analysis: analysisCache.size
+    }
+  });
+});
+
+// Debug endpoint to test Vision API
+router.get('/test-vision', async (req, res) => {
+  try {
+    // Attempt to validate Vision client initialization
+    if (!visionService.isInitialized()) {
+      return res.status(500).json({
+        error: 'Vision API client not properly initialized',
+        googleCredentials: process.env.GOOGLE_CREDENTIALS ? 'Provided' : 'Missing'
+      });
+    }
+    
+    // Return success if we got here
+    res.json({
+      status: 'Vision API client initialized successfully',
+      googleCredentials: process.env.GOOGLE_CREDENTIALS ? 'Provided' : 'Using Application Default Credentials'
+    });
+  } catch (error) {
+    console.error('Vision test error:', error);
+    res.status(500).json({
+      error: 'Error testing Vision API',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

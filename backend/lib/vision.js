@@ -7,22 +7,36 @@ const { ImageAnnotatorClient } = require('@google-cloud/vision');
 const fs = require('fs');
 
 // Initialize Vision client
-const visionClient = new ImageAnnotatorClient();
+let visionClient;
+
+try {
+  // If using GOOGLE_CREDENTIALS environment variable (for Vercel)
+  if (process.env.GOOGLE_CREDENTIALS) {
+    visionClient = new ImageAnnotatorClient({
+      credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS)
+    });
+  } else {
+    // Default initialization (for local development)
+    visionClient = new ImageAnnotatorClient();
+  }
+} catch (error) {
+  console.error('Failed to initialize Vision client:', error);
+}
 
 /**
- * Analyzes an image using Google Cloud Vision API
- * @param {string} imagePath - Path to the image file
+ * Analyzes an image buffer using Google Cloud Vision API
+ * @param {Buffer} imageBuffer - Buffer containing the image data
  * @returns {Object} Analysis results containing labels, colors, and emotions
  */
-async function analyzeImage(imagePath) {
+async function analyzeImageBuffer(imageBuffer) {
   try {
-    // Load image file as base64
-    const imageFile = fs.readFileSync(imagePath);
+    // Convert buffer to base64
+    const encodedImage = imageBuffer.toString('base64');
     
-    // Create request with multiple feature types
+    // Create request for the annotateImage method
     const request = {
       image: {
-        content: imageFile.toString('base64')
+        content: encodedImage
       },
       features: [
         { type: 'LABEL_DETECTION', maxResults: 15 },
@@ -31,7 +45,7 @@ async function analyzeImage(imagePath) {
       ]
     };
     
-    // Call annotateImage instead of individual methods
+    // Call annotateImage method
     const [result] = await visionClient.annotateImage(request);
     
     // Extract results from the combined response
@@ -56,7 +70,7 @@ async function analyzeImage(imagePath) {
           hex: rgbToHex(color.color.red, color.color.green, color.color.blue)
         }))
       : [];
-      
+    
     // Extract face emotions if any faces detected
     const emotions = faceAnnotations.map(face => ({
       joy: getEmotionLikelihood(face.joyLikelihood),
@@ -64,16 +78,16 @@ async function analyzeImage(imagePath) {
       anger: getEmotionLikelihood(face.angerLikelihood),
       surprise: getEmotionLikelihood(face.surpriseLikelihood)
     }));
-
+    
     // Get dominant emotion across all faces
     const dominantEmotion = getDominantEmotion(emotions);
-
+    
     // Generate color names based on RGB values
     const colorNames = colors.map(color => getColorName(color));
-
+    
     // Extract keywords from labels and colors for recommendation
     const keywords = extractKeywords(labels, colorNames, dominantEmotion);
-
+    
     return {
       labels,
       colors,
@@ -82,6 +96,22 @@ async function analyzeImage(imagePath) {
       colorNames,
       keywords
     };
+  } catch (error) {
+    console.error('Vision API error:', error);
+    throw new Error(`Vision API analysis failed: ${error.message}`);
+  }
+}
+
+/**
+ * Analyzes an image using Google Cloud Vision API
+ * @param {string} imagePath - Path to the image file
+ * @returns {Object} Analysis results containing labels, colors, and emotions
+ */
+async function analyzeImage(imagePath) {
+  try {
+    // Load image file as base64
+    const imageFile = fs.readFileSync(imagePath);
+    return analyzeImageBuffer(imageFile);
   } catch (error) {
     console.error('Vision API error:', error);
     throw new Error(`Vision API analysis failed: ${error.message}`);
@@ -250,6 +280,16 @@ function extractKeywords(labels, colorNames, dominantEmotion) {
   return [...new Set(allKeywords)];
 }
 
+/**
+ * Checks if the Vision client is properly initialized
+ * @returns {boolean} Whether the client is initialized
+ */
+function isInitialized() {
+  return !!visionClient;
+}
+
 module.exports = {
-  analyzeImage
+  analyzeImage,
+  analyzeImageBuffer,
+  isInitialized
 }; 
