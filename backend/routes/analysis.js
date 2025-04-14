@@ -65,9 +65,11 @@ router.post('/upload', upload.single('image'), (req, res) => {
  */
 router.post('/analyze', async (req, res) => {
   try {
+    console.log('Analysis endpoint called');
     const { filename } = req.body;
     
     if (!filename) {
+      console.log('No filename provided');
       return res.status(400).json({ error: 'No filename provided' });
     }
     
@@ -80,16 +82,29 @@ router.post('/analyze', async (req, res) => {
     // Get image buffer from cache
     const imageBuffer = imageCache.get(filename);
     if (!imageBuffer) {
+      console.log('Image not found in cache:', filename);
       return res.status(404).json({ error: 'Image not found' });
     }
 
+    console.log('Analyzing image:', filename);
+    
     // Analyze image using Google Cloud Vision
-    const analysisResults = await visionService.analyzeImageBuffer(imageBuffer);
-    
-    // Cache the results
-    analysisCache.set(filename, analysisResults);
-    
-    res.status(200).json(analysisResults);
+    try {
+      const analysisResults = await visionService.analyzeImageBuffer(imageBuffer);
+      
+      // Cache the results
+      analysisCache.set(filename, analysisResults);
+      
+      console.log('Analysis complete for:', filename);
+      res.status(200).json(analysisResults);
+    } catch (visionError) {
+      console.error('Vision API error:', visionError);
+      res.status(500).json({ 
+        error: 'Error analyzing image with Vision API', 
+        details: visionError.message,
+        stack: process.env.NODE_ENV === 'development' ? visionError.stack : undefined
+      });
+    }
   } catch (error) {
     console.error('Analysis error:', error);
     res.status(500).json({ 

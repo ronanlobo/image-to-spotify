@@ -11,21 +11,52 @@ const path = require('path');
 let visionClient;
 
 try {
-  // Try multiple ways to get credentials
-  if (fs.existsSync(path.join(process.cwd(), '.vercel/credentials.json'))) {
-    // Load credentials from file system
-    console.log('Using Google credentials from .vercel/credentials.json');
+  console.log('Initializing Vision client...');
+  
+  // Check for chunked credentials (preferred for Vercel)
+  if (process.env.GOOGLE_CREDS_1) {
+    console.log('Using chunked Google credentials from environment variables');
+    try {
+      // Combine credential chunks (add more if needed)
+      const credentialsJson = 
+        (process.env.GOOGLE_CREDS_1 || '') + 
+        (process.env.GOOGLE_CREDS_2 || '') + 
+        (process.env.GOOGLE_CREDS_3 || '') + 
+        (process.env.GOOGLE_CREDS_4 || '');
+      
+      const parsedCredentials = JSON.parse(credentialsJson);
+      visionClient = new ImageAnnotatorClient({
+        credentials: parsedCredentials
+      });
+      console.log('Vision client initialized with chunked credentials');
+    } catch (parseError) {
+      console.error('Error parsing chunked GOOGLE_CREDS:', parseError);
+      throw parseError;
+    }
+  } 
+  // Try single environment variable (may not work if too large)
+  else if (process.env.GOOGLE_CREDENTIALS) {
+    console.log('Using Google credentials from environment variable');
+    try {
+      const parsedCredentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+      visionClient = new ImageAnnotatorClient({
+        credentials: parsedCredentials
+      });
+      console.log('Vision client initialized with environment credentials');
+    } catch (parseError) {
+      console.error('Error parsing GOOGLE_CREDENTIALS:', parseError);
+      throw parseError;
+    }
+  } 
+  // Local development with file
+  else if (process.env.NODE_ENV !== 'production' && fs.existsSync(path.join(process.cwd(), '.vercel/credentials.json'))) {
+    console.log('Using Google credentials file from .vercel/credentials.json');
     visionClient = new ImageAnnotatorClient({
       keyFilename: path.join(process.cwd(), '.vercel/credentials.json')
     });
-  } else if (process.env.GOOGLE_CREDENTIALS) {
-    // If using GOOGLE_CREDENTIALS environment variable (fallback)
-    console.log('Using Google credentials from environment variable');
-    visionClient = new ImageAnnotatorClient({
-      credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS)
-    });
-  } else {
-    // Default initialization (for local development with ADC)
+  } 
+  // Default credentials
+  else {
     console.log('Using Application Default Credentials');
     visionClient = new ImageAnnotatorClient();
   }
@@ -40,6 +71,10 @@ try {
  */
 async function analyzeImageBuffer(imageBuffer) {
   try {
+    if (!visionClient) {
+      throw new Error('Vision client not initialized properly');
+    }
+    
     // Convert buffer to base64
     const encodedImage = imageBuffer.toString('base64');
     
@@ -55,8 +90,12 @@ async function analyzeImageBuffer(imageBuffer) {
       ]
     };
     
+    console.log('Sending vision API request...');
+    
     // Call annotateImage method
     const [result] = await visionClient.annotateImage(request);
+    
+    console.log('Vision API response received');
     
     // Extract results from the combined response
     const labelAnnotations = result.labelAnnotations || [];
