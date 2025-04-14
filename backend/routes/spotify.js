@@ -14,6 +14,12 @@ const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI;
 
+// Log configuration details
+console.log('Spotify Auth Configuration:');
+console.log(`- Client ID: ${SPOTIFY_CLIENT_ID ? 'Set ✓' : 'Not set ✗'}`);
+console.log(`- Client Secret: ${SPOTIFY_CLIENT_SECRET ? 'Set ✓' : 'Not set ✗'}`);
+console.log(`- Redirect URI: ${SPOTIFY_REDIRECT_URI || 'Not set ✗'}`);
+
 // Configure Spotify Strategy
 passport.use(
   new SpotifyStrategy(
@@ -24,6 +30,11 @@ passport.use(
       scope: ['user-read-email', 'user-library-modify', 'playlist-modify-public', 'playlist-modify-private']
     },
     (accessToken, refreshToken, expires_in, profile, done) => {
+      console.log('Spotify authentication successful');
+      console.log(`- User: ${profile.id} (${profile.displayName})`);
+      console.log(`- Access Token: ${accessToken ? 'Received ✓' : 'Missing ✗'}`);
+      console.log(`- Refresh Token: ${refreshToken ? 'Received ✓' : 'Missing ✗'}`);
+      
       // Store tokens in user session
       const user = {
         id: profile.id,
@@ -40,10 +51,12 @@ passport.use(
 
 // Serialize and deserialize user
 passport.serializeUser((user, done) => {
+  console.log(`Serializing user: ${user.id}`);
   done(null, user);
 });
 
 passport.deserializeUser((user, done) => {
+  console.log(`Deserializing user: ${user.id}`);
   done(null, user);
 });
 
@@ -51,7 +64,13 @@ passport.deserializeUser((user, done) => {
  * GET /api/spotify/login
  * Initiates Spotify OAuth flow
  */
-router.get('/login', passport.authenticate('spotify'));
+router.get('/login', (req, res, next) => {
+  console.log('Spotify login initiated');
+  console.log(`- Session ID: ${req.session?.id || 'No session'}`);
+  console.log(`- Redirect URI being used: ${SPOTIFY_REDIRECT_URI}`);
+  
+  passport.authenticate('spotify')(req, res, next);
+});
 
 /**
  * GET /api/spotify/callback
@@ -59,10 +78,28 @@ router.get('/login', passport.authenticate('spotify'));
  */
 router.get(
   '/callback',
+  (req, res, next) => {
+    console.log('Spotify callback received');
+    console.log(`- Session ID: ${req.session?.id || 'No session'}`);
+    console.log(`- Query params: ${JSON.stringify(req.query)}`);
+    
+    // Check for error in the callback
+    if (req.query.error) {
+      console.error(`Spotify auth error: ${req.query.error}`);
+      return res.redirect('/?auth_error=' + encodeURIComponent(req.query.error));
+    }
+    
+    next();
+  },
   passport.authenticate('spotify', {
-    failureRedirect: '/',
-    successRedirect: '/'
-  })
+    failureRedirect: '/?auth_status=failed'
+  }),
+  (req, res) => {
+    console.log('Spotify authentication completed successfully');
+    console.log(`- User ID: ${req.user?.id || 'No user ID'}`);
+    console.log(`- Access Token exists: ${!!req.user?.accessToken}`);
+    res.redirect('/?auth_status=success');
+  }
 );
 
 /**
@@ -70,13 +107,70 @@ router.get(
  * Returns the authenticated user's Spotify profile
  */
 router.get('/user', (req, res) => {
+  console.log('Spotify user info requested');
+  console.log(`- Session ID: ${req.session?.id || 'No session'}`);
+  console.log(`- Is authenticated: ${!!req.user}`);
+  
   if (!req.user) {
+    console.log('User not authenticated with Spotify');
     return res.status(401).json({ error: 'Not authenticated with Spotify' });
   }
+  
+  console.log(`- Returning info for user: ${req.user.id}`);
   res.json({
     id: req.user.id,
     displayName: req.user.displayName,
     email: req.user.email
+  });
+});
+
+/**
+ * GET /api/spotify/debug
+ * Debugging endpoint to inspect session and request information
+ */
+router.get('/debug', (req, res) => {
+  console.log('Debug endpoint called');
+  
+  // Inspect headers, cookies, and session
+  const headers = req.headers;
+  const cookies = req.cookies || {};
+  const session = req.session || {};
+  
+  // Sanitize session data for logging (remove sensitive info)
+  const sanitizedSession = { ...session };
+  if (sanitizedSession.passport && sanitizedSession.passport.user) {
+    if (sanitizedSession.passport.user.accessToken) {
+      sanitizedSession.passport.user.accessToken = 'REDACTED';
+    }
+    if (sanitizedSession.passport.user.refreshToken) {
+      sanitizedSession.passport.user.refreshToken = 'REDACTED';
+    }
+  }
+  
+  console.log('Session data:', JSON.stringify(sanitizedSession, null, 2));
+  console.log('Cookie header:', headers.cookie);
+  console.log('Request host:', headers.host);
+  console.log('Request protocol:', req.protocol);
+  
+  res.json({
+    auth: {
+      isAuthenticated: !!req.user,
+      sessionExists: !!req.session,
+      sessionID: req.sessionID || null
+    },
+    environment: {
+      nodeEnv: process.env.NODE_ENV,
+      spotifyRedirectUri: SPOTIFY_REDIRECT_URI,
+      hasClientId: !!SPOTIFY_CLIENT_ID,
+      hasClientSecret: !!SPOTIFY_CLIENT_SECRET
+    },
+    request: {
+      host: req.headers.host,
+      protocol: req.protocol,
+      originalUrl: req.originalUrl,
+      referrer: req.headers.referer || null,
+      userAgent: req.headers['user-agent'] || null
+    }
   });
 });
 

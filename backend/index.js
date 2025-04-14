@@ -18,10 +18,25 @@ const spotifyRoutes = require('./routes/spotify');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Check if running in production (Vercel)
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Trust proxy for Vercel deployment (important for secure cookies)
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Log environment info
+console.log(`Server starting in ${isProduction ? 'production' : 'development'} mode`);
+console.log(`Session cookie secure: ${isProduction}`);
 
 // Session configuration for Spotify authentication
 app.use(session({
@@ -29,7 +44,9 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProduction, // true in production
+    httpOnly: true,
+    sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site requests in prod
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
