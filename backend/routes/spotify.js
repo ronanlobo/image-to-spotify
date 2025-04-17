@@ -27,13 +27,18 @@ passport.use(
       clientID: SPOTIFY_CLIENT_ID,
       clientSecret: SPOTIFY_CLIENT_SECRET,
       callbackURL: SPOTIFY_REDIRECT_URI,
-      scope: ['user-read-email', 'user-library-modify', 'playlist-modify-public', 'playlist-modify-private']
+      scope: ['user-read-email', 'user-library-modify', 'playlist-modify-public', 'playlist-modify-private'],
+      passReqToCallback: true // Pass request to callback
     },
-    (accessToken, refreshToken, expires_in, profile, done) => {
+    (req, accessToken, refreshToken, expires_in, profile, done) => {
       console.log('Spotify authentication successful');
       console.log(`- User: ${profile.id} (${profile.displayName})`);
       console.log(`- Access Token: ${accessToken ? 'Received ✓' : 'Missing ✗'}`);
       console.log(`- Refresh Token: ${refreshToken ? 'Received ✓' : 'Missing ✗'}`);
+      console.log(`- Expires in: ${expires_in} seconds`);
+      
+      // Calculate token expiration time
+      const expiresAt = Date.now() + (expires_in * 1000);
       
       // Store tokens in user session
       const user = {
@@ -42,23 +47,103 @@ passport.use(
         email: profile.emails && profile.emails[0].value,
         accessToken,
         refreshToken,
-        expires_in
+        expiresAt // Store expiration timestamp instead of duration
       };
+      
+      // Also store a backup in cookies for redundancy
+      // (Helps with session recovery in serverless environments)
+      if (req.res) {
+        req.res.cookie('spotify_user_id', profile.id, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        });
+      }
+      
       return done(null, user);
     }
   )
 );
 
-// Serialize and deserialize user
+// Serialize the entire user object for maximum data retention
 passport.serializeUser((user, done) => {
   console.log(`Serializing user: ${user.id}`);
+  // Store the complete user object
   done(null, user);
 });
 
 passport.deserializeUser((user, done) => {
   console.log(`Deserializing user: ${user.id}`);
+  // Return the complete object since we stored it all
   done(null, user);
 });
+
+/**
+ * Middleware to refresh access token if expired
+ */
+async function refreshTokenIfNeeded(req, res, next) {
+  // Skip if no user or no tokens
+  if (!req.user || !req.user.accessToken) {
+    return next();
+  }
+  
+  try {
+    // Check if token is expired or about to expire (within 5 minutes)
+    const now = Date.now();
+    const tokenExpiresAt = req.user.expiresAt;
+    const isExpired = now >= tokenExpiresAt - (5 * 60 * 1000); // 5 min buffer
+    
+    // If token is still valid, continue
+    if (!isExpired) {
+      return next();
+    }
+    
+    console.log('Access token expired, refreshing...');
+    
+    // No refresh token, can't refresh
+    if (!req.user.refreshToken) {
+      console.log('No refresh token available, cannot refresh access token');
+      return next();
+    }
+    
+    // Request new access token
+    const response = await axios.post(
+      'https://accounts.spotify.com/api/token',
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: req.user.refreshToken
+      }).toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')}`
+        }
+      }
+    );
+    
+    // Update tokens in session
+    req.user.accessToken = response.data.access_token;
+    if (response.data.refresh_token) {
+      req.user.refreshToken = response.data.refresh_token;
+    }
+    req.user.expiresAt = Date.now() + (response.data.expires_in * 1000);
+    
+    console.log('Access token refreshed successfully');
+    
+    // Update session
+    req.session.passport.user = req.user;
+    req.session.save(err => {
+      if (err) {
+        console.error('Error saving session after token refresh:', err);
+      }
+      next();
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error.message);
+    next();
+  }
+}
 
 /**
  * GET /api/spotify/login
@@ -66,10 +151,19 @@ passport.deserializeUser((user, done) => {
  */
 router.get('/login', (req, res, next) => {
   console.log('Spotify login initiated');
-  console.log(`- Session ID: ${req.session?.id || 'No session'}`);
+  console.log(`- Session ID: ${req.sessionID || 'No session'}`);
   console.log(`- Redirect URI being used: ${SPOTIFY_REDIRECT_URI}`);
   
-  passport.authenticate('spotify')(req, res, next);
+  // Save the state to prevent CSRF
+  req.session.spotifyState = Date.now();
+  
+  // Force session save before redirecting
+  req.session.save((err) => {
+    if (err) {
+      console.error('Error saving session before OAuth redirect:', err);
+    }
+    passport.authenticate('spotify')(req, res, next);
+  });
 });
 
 /**
@@ -80,7 +174,7 @@ router.get(
   '/callback',
   (req, res, next) => {
     console.log('Spotify callback received');
-    console.log(`- Session ID: ${req.session?.id || 'No session'}`);
+    console.log(`- Session ID: ${req.sessionID || 'No session'}`);
     console.log(`- Query params: ${JSON.stringify(req.query)}`);
     
     // Check for error in the callback
@@ -91,14 +185,41 @@ router.get(
     
     next();
   },
-  passport.authenticate('spotify', {
-    failureRedirect: '/?auth_status=failed'
-  }),
-  (req, res) => {
-    console.log('Spotify authentication completed successfully');
-    console.log(`- User ID: ${req.user?.id || 'No user ID'}`);
-    console.log(`- Access Token exists: ${!!req.user?.accessToken}`);
-    res.redirect('/?auth_status=success');
+  function(req, res, next) {
+    // Use custom callback to have more control
+    passport.authenticate('spotify', { session: false }, function(err, user, info) {
+      if (err) {
+        console.error('Authentication error:', err);
+        return res.redirect('/?auth_error=internal');
+      }
+      
+      if (!user) {
+        console.error('No user returned from Spotify authentication');
+        return res.redirect('/?auth_error=no_user');
+      }
+      
+      // Manually establish session
+      req.login(user, { session: true }, function(err) {
+        if (err) {
+          console.error('Login error:', err);
+          return res.redirect('/?auth_error=login_failed');
+        }
+        
+        // Force session save
+        req.session.save(function(err) {
+          if (err) {
+            console.error('Session save error:', err);
+            return res.redirect('/?auth_error=session_save_failed');
+          }
+          
+          console.log('Authentication successful, redirecting to homepage');
+          console.log(`- Session ID: ${req.sessionID}`);
+          console.log(`- User: ${user.id}`);
+          
+          return res.redirect('/?auth_status=success');
+        });
+      });
+    })(req, res, next);
   }
 );
 
@@ -108,7 +229,7 @@ router.get(
  */
 router.get('/user', (req, res) => {
   console.log('Spotify user info requested');
-  console.log(`- Session ID: ${req.session?.id || 'No session'}`);
+  console.log(`- Session ID: ${req.sessionID || 'No session'}`);
   console.log(`- Is authenticated: ${!!req.user}`);
   
   if (!req.user) {
@@ -169,7 +290,8 @@ router.get('/debug', (req, res) => {
       protocol: req.protocol,
       originalUrl: req.originalUrl,
       referrer: req.headers.referer || null,
-      userAgent: req.headers['user-agent'] || null
+      userAgent: req.headers['user-agent'] || null,
+      cookies: Object.keys(cookies)
     }
   });
 });
@@ -183,9 +305,21 @@ router.get('/logout', (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'Error logging out' });
     }
+    
+    // Clear cookies
+    res.clearCookie('spotify.sid');
+    res.clearCookie('spotify_user_id');
+    
+    // Redirect to home
     res.redirect('/');
   });
 });
+
+// Add refresh token middleware to all API routes
+router.use('/search', refreshTokenIfNeeded);
+router.use('/like', refreshTokenIfNeeded);
+router.use('/playlists', refreshTokenIfNeeded);
+router.use('/playlist', refreshTokenIfNeeded);
 
 /**
  * POST /api/spotify/search

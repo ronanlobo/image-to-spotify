@@ -9,6 +9,8 @@ const cors = require('cors');
 const path = require('path');
 const session = require('express-session');
 const passport = require('passport');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 
 // Import routes
 const analysisRoutes = require('./routes/analysis');
@@ -33,23 +35,65 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser(process.env.SESSION_SECRET || 'your-secret-key'));
 
 // Log environment info
 console.log(`Server starting in ${isProduction ? 'production' : 'development'} mode`);
 console.log(`Session cookie secure: ${isProduction}`);
 
+// Create a custom session store that enhances the memory store
+const MemoryStore = session.MemoryStore;
+const sessionStore = new MemoryStore();
+
+// Log session activity for debugging
+sessionStore.on('error', function(error) {
+  console.error('Session store error:', error);
+});
+
 // Session configuration for Spotify authentication
 app.use(session({
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
+  name: 'spotify.sid', // Custom name to avoid conflicts
   cookie: { 
     secure: isProduction, // true in production
     httpOnly: true,
     sameSite: isProduction ? 'none' : 'lax', // 'none' for cross-site requests in prod
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    path: '/' // Set to root so it's available everywhere
+  },
+  // Use existing session ID if present in cookies to maintain persistence
+  genid: function(req) {
+    if (req.cookies && req.cookies['spotify.sid']) {
+      const existingId = req.cookies['spotify.sid'].split('.')[0];
+      console.log('Reusing existing session ID:', existingId);
+      return existingId;
+    }
+    const newId = crypto.randomBytes(16).toString('hex');
+    console.log('Generated new session ID:', newId);
+    return newId;
   }
 }));
+
+// Add session debugging middleware
+app.use((req, res, next) => {
+  const sessionId = req.sessionID;
+  console.log(`Request path: ${req.path}, Session ID: ${sessionId}`);
+  console.log(`Session authenticated: ${req.session && req.session.passport ? 'Yes' : 'No'}`);
+  
+  // Add a hook to log response cookies
+  const originalSetCookie = res.setHeader;
+  res.setHeader = function(name, value) {
+    if (name === 'Set-Cookie') {
+      console.log('Setting cookies:', value);
+    }
+    return originalSetCookie.apply(this, arguments);
+  };
+  
+  next();
+});
 
 // Initialize Passport
 app.use(passport.initialize());
@@ -67,7 +111,11 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK',
     environment: process.env.NODE_ENV,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    sessionStore: {
+      type: 'memory',
+      sessionsCount: Object.keys(sessionStore.sessions || {}).length
+    }
   });
 });
 
